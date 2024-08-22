@@ -1,7 +1,7 @@
 import numpy as np
 from typing import Optional, Tuple, List
 from tabulate import tabulate
-from bokeh.plotting import figure
+from bokeh.plotting import figure, curdoc
 from bokeh.models import LinearColorMapper, ColorBar
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -17,9 +17,9 @@ class AttentionVisualizer:
         ):
         if device is None:
             if torch.cuda.is_available():
-                device = "cuda"
+                device = 'cuda'
             else:
-                device = "cpu"
+                device = 'cpu'
         
         if model.device != device:
             model = model.to(device)
@@ -27,7 +27,7 @@ class AttentionVisualizer:
         self.model = model
         self.tokenizer = tokenizer
 
-        self._inputs = tokenizer(prompt, return_tensors="pt").to(device)
+        self._inputs = tokenizer(prompt, return_tensors='pt').to(device)
         self.tokens: List[str] = [
             token
             for token in tokenizer.convert_ids_to_tokens(self._inputs['input_ids'].squeeze(0).tolist())
@@ -43,7 +43,7 @@ class AttentionVisualizer:
             return self._generated_text
 
         output_sequences = self.model.generate(
-            input_ids=self._inputs["input_ids"],
+            input_ids=self._inputs['input_ids'],
             max_length=50,
             temperature=1,
             top_p=0.9,
@@ -115,6 +115,7 @@ class AttentionVisualizer:
         
         attention = attention.detach().cpu().numpy()
         
+        curdoc().theme = 'carbon'
         p = figure(
             width=500,
             height=400,
@@ -124,7 +125,7 @@ class AttentionVisualizer:
             y_axis_label=y_label
         )
 
-        color_mapper = LinearColorMapper(palette="Viridis256", low=attention.min(), high=attention.max())
+        color_mapper = LinearColorMapper(palette='Viridis256', low=attention.min(), high=attention.max())
         p.image(image=[attention], x=0, y=0, dw=attention.shape[1], dh=attention.shape[0], color_mapper=color_mapper)
 
         color_bar = ColorBar(color_mapper=color_mapper, label_standoff=12)
