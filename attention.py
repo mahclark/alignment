@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, List, Dict
 from tabulate import tabulate
 from bokeh.plotting import figure, curdoc
 from bokeh.models import LinearColorMapper, ColorBar
@@ -138,3 +138,53 @@ class AttentionVisualizer:
     def token_intensities(self, *, token_index: int, layer: Optional[int] = None, head: Optional[int] = None) -> List[Tuple[str, float]]:
         attention = self.get_mean_attention(token_index=token_index, layer=layer, head=head).tolist()
         return list(zip(self.tokens, attention))
+
+    @property
+    def space_token(self) -> str:
+        token_ids = self.tokenizer.encode(' ')
+        return self.tokenizer.convert_ids_to_tokens(token_ids)[-1]
+    
+    def token_intensity_html(
+            self, 
+            *,
+            token_index: int,
+            layer: Optional[int] = None,
+            head: Optional[int] = None,
+            style: Dict[str, str] = {},
+            highlight_color: Tuple[int, int, int] = (209, 69, 69),
+        ) -> str:
+        
+        background_color = (26, 26, 26)
+        style = dict(
+            {
+                'color': 'rgb(213, 213, 213)',
+                'background-color': f'rgb{background_color}',
+                'font-size': '20px',
+                'font-family': 'monospace',
+            },
+            **style
+        )
+
+        def highlight(text: str, intensity: float) -> str:
+            bg_color = (
+                int(background_color[0] + (highlight_color[0] - background_color[0]) * intensity),
+                int(background_color[1] + (highlight_color[1] - background_color[1]) * intensity),
+                int(background_color[2] + (highlight_color[2] - background_color[2]) * intensity),
+            )
+            return f"<span style='background-color: rgb{bg_color};'>{text}</span>"
+        
+
+        split_intensities = []
+        for token, intensity in self.token_intensities(token_index=token_index, layer=layer, head=head):
+            if token.startswith(self.space_token):
+                split_intensities.append((' ', 0))
+            split_intensities.append((token.lstrip(self.space_token), intensity))
+                
+        return (
+            f"<span style='{' '.join([f'{k}: {v};' for k, v in style.items()])}'>"
+            + ''.join([
+                highlight(token.replace('<', '&lt;').replace('>', '&gt;'), intensity)
+                for token, intensity in split_intensities
+            ])
+            + "</span>"
+        )
