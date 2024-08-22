@@ -151,10 +151,10 @@ class AttentionVisualizer:
             layer: Optional[int] = None,
             head: Optional[int] = None,
             style: Dict[str, str] = {},
+            background_color: Tuple[int, int, int] = (26, 26, 26),
             highlight_color: Tuple[int, int, int] = (209, 69, 69),
         ) -> str:
         
-        background_color = (26, 26, 26)
         style = dict(
             {
                 'color': 'rgb(213, 213, 213)',
