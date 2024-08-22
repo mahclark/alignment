@@ -56,7 +56,7 @@ class AttentionVisualizer:
     
     @property
     def attention_weights(self) -> torch.Tensor:
-        return torch.stack(self._output_attention).squeeze(1)
+        return torch.stack(self._output_attention).squeeze(1).detach().cpu()
     
     def argmax_attention(self, *, token_index: int, target_token_index: int) -> Tuple[int, int]:
         argmax = self.attention_weights[:, :, token_index, target_token_index].argmax()
@@ -84,7 +84,7 @@ class AttentionVisualizer:
         attention = self.get_mean_attention(token_index=token_index, layer=layer, head=head)
         print(tabulate([
             self.tokens,
-            [f'{n:.2f}' for n in attention.detach().tolist()],
+            [f'{n:.2f}' for n in attention.tolist()],
         ]))
     
     def get_attention_for_head(self, *, token_index: int, head: int) -> torch.Tensor:
@@ -113,7 +113,7 @@ class AttentionVisualizer:
             title = f'Layer {layer} Head {head}'
             y_label = ''
         
-        attention = attention.detach().cpu().numpy()
+        attention = attention.numpy()
         
         curdoc().theme = 'carbon'
         p = figure(
@@ -134,3 +134,7 @@ class AttentionVisualizer:
         p.xaxis.major_label_orientation = np.pi / 4
 
         return p
+    
+    def token_intensities(self, *, token_index: int, layer: Optional[int] = None, head: Optional[int] = None) -> List[Tuple[str, float]]:
+        attention = self.get_mean_attention(token_index=token_index, layer=layer, head=head).tolist()
+        return list(zip(self.tokens, attention))
