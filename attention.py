@@ -5,6 +5,12 @@ from bokeh.plotting import figure, curdoc
 from bokeh.models import LinearColorMapper, ColorBar
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
+from enum import Enum, auto
+
+
+class Aggregation(Enum):
+    mean = auto()
+    max = auto()
 
 
 class AttentionVisualizer:
@@ -59,15 +65,9 @@ class AttentionVisualizer:
         return torch.stack(self._output_attention).squeeze(1).detach().cpu()
     
     def argmax_attention(self, *, token_index: int, target_token_index: int) -> Tuple[int, int]:
+        """Returns the layer and head with the largest attention between the two tokens at the indices provided"""
         argmax = self.attention_weights[:, :, token_index, target_token_index].argmax()
         layer, head = torch.unravel_index(argmax, self.attention_weights.shape[:2])
-        print(f'''{
-            self.tokens[token_index]
-        }-{
-            self.tokens[target_token_index]
-        } max at layer {layer} head {head}, value {
-            self.attention_weights[layer, head, token_index, target_token_index]
-        }''')
         return layer.item(), head.item()
     
     def get_mean_attention(self, *, token_index: int, layer: Optional[int] = None, head: Optional[int] = None) -> torch.Tensor:
@@ -80,6 +80,16 @@ class AttentionVisualizer:
         
         return self.attention_weights[layer, head, token_index, :]
     
+    def get_max_attention(self, *, token_index: int, layer: Optional[int] = None, head: Optional[int] = None) -> torch.Tensor:
+        if layer is None and head is None:
+            return torch.amax(self.attention_weights[:, :, token_index, :], dim=(0, 1))
+        if layer is None:
+            return torch.amax(self.attention_weights[:, head, token_index, :], dim=0)
+        if head is None:
+            return torch.amax(self.attention_weights[layer, :, token_index, :], dim=0)
+        
+        return self.attention_weights[layer, head, token_index, :]
+    
     def print_attention(self, *, token_index: int, layer: Optional[int] = None, head: Optional[int] = None) -> None:
         attention = self.get_mean_attention(token_index=token_index, layer=layer, head=head)
         print(tabulate([
@@ -87,29 +97,20 @@ class AttentionVisualizer:
             [f'{n:.2f}' for n in attention.tolist()],
         ]))
     
-    def get_attention_for_head(self, *, token_index: int, head: int) -> torch.Tensor:
-        return self.attention_weights[:, head, token_index, :]
-    
-    def get_attention_for_layer(self, *, token_index: int, layer: int) -> torch.Tensor:
-        return self.attention_weights[layer, :, token_index, :]
-    
-    def get_attention_for_layer_and_head(self, *, token_index: int, layer: int, head: int) -> torch.Tensor:
-        return self.attention_weights[layer, head, token_index, :]
-    
     def heatmap_attention(self, *, token_index: int, layer: Optional[int] = None, head: Optional[int] = None) -> figure:
         if layer is None and head is None:
             raise ValueError('layer or head must be specified')
         
         if layer is None:
-            attention = self.get_attention_for_head(token_index=token_index, head=head)
+            attention = self.attention_weights[:, head, token_index, :]
             title = f'Head {head}'
             y_label = 'Layer'
         elif head is None:
-            attention = self.get_attention_for_layer(token_index=token_index, layer=layer)
+            attention = self.attention_weights[layer, :, token_index, :]
             title = f'Layer {layer}'
             y_label = 'Head'
         else:
-            attention = self.get_attention_for_layer_and_head(token_index=token_index, layer=layer, head=head).unsqueeze(0)
+            attention = self.attention_weights[layer, head, token_index, :].unsqueeze(0)
             title = f'Layer {layer} Head {head}'
             y_label = ''
         
@@ -135,9 +136,22 @@ class AttentionVisualizer:
 
         return p
     
-    def token_intensities(self, *, token_index: int, layer: Optional[int] = None, head: Optional[int] = None) -> List[Tuple[str, float]]:
-        attention = self.get_mean_attention(token_index=token_index, layer=layer, head=head).tolist()
-        return list(zip(self.tokens, attention))
+    def token_intensities(
+            self,
+            *,
+            token_index: int,
+            layer: Optional[int] = None,
+            head: Optional[int] = None,
+            agg: Aggregation = Aggregation.mean,
+        ) -> List[Tuple[str, float]]:
+
+        if agg == Aggregation.mean:
+            attention = self.get_mean_attention(token_index=token_index, layer=layer, head=head)
+        elif agg == Aggregation.max:
+            attention = self.get_max_attention(token_index=token_index, layer=layer, head=head)
+        else:
+            raise ValueError(f'Unknown aggreagtation {agg}')
+        return list(zip(self.tokens, attention.tolist()))
 
     @property
     def space_token(self) -> str:
@@ -150,6 +164,7 @@ class AttentionVisualizer:
             token_index: int,
             layer: Optional[int] = None,
             head: Optional[int] = None,
+            agg: Aggregation = Aggregation.mean,
             style: Dict[str, str] = {},
             background_color: Tuple[int, int, int] = (26, 26, 26),
             highlight_color: Tuple[int, int, int] = (209, 69, 69),
@@ -175,7 +190,7 @@ class AttentionVisualizer:
         
 
         split_intensities = []
-        for token, intensity in self.token_intensities(token_index=token_index, layer=layer, head=head):
+        for token, intensity in self.token_intensities(token_index=token_index, layer=layer, head=head, agg=agg):
             if token.startswith(self.space_token):
                 split_intensities.append((' ', 0))
             split_intensities.append((token.lstrip(self.space_token), intensity))
