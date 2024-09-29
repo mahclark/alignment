@@ -1,16 +1,33 @@
 import numpy as np
-from typing import Optional, Tuple, List, Dict
+from typing import Optional, Tuple, List, Dict, Union, Callable
 from tabulate import tabulate
 from bokeh.plotting import figure, curdoc
 from bokeh.models import LinearColorMapper, ColorBar
 import torch
+from torch import Tensor
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from enum import Enum, auto
+from dataclasses import dataclass
+
+
+@dataclass
+class AggregationType:
+    agg: Callable[[Tensor, int], Tensor]
 
 
 class Aggregation(Enum):
-    mean = auto()
-    max = auto()
+    mean = AggregationType(torch.mean)
+    max = AggregationType(lambda tensor, dim: torch.max(tensor, dim=dim).values)
+
+    def __init__(self, agg_type: AggregationType):
+        self._agg = agg_type.agg
+
+    def __str__(self) -> str:
+        return f'[{self.name}]'
+
+    @property
+    def agg(self):
+        return self._agg
 
 
 class AttentionVisualizer:
@@ -97,23 +114,42 @@ class AttentionVisualizer:
             [f'{n:.2f}' for n in attention.tolist()],
         ]))
     
-    def heatmap_attention(self, *, token_index: int, layer: Optional[int] = None, head: Optional[int] = None) -> figure:
+    def heatmap_attention(self, *, token_index: int, layer: Optional[Union[int, Aggregation]] = None, head: Optional[Union[int, Aggregation]] = None) -> figure:
         if layer is None and head is None:
             raise ValueError('layer or head must be specified')
         
+        if type(layer) == Aggregation and type(head) == Aggregation:
+            raise ValueError('Using aggregations across 2 dimensions is undefined')
+        
         if layer is None:
-            attention = self.attention_weights[:, head, token_index, :]
+            if type(head) == Aggregation:
+                attention = head.agg(self.attention_weights[:, :, token_index, :], dim=1)
+            else:
+                attention = self.attention_weights[:, head, token_index, :]
+    
             title = f'Head {head}'
             y_label = 'Layer'
+
         elif head is None:
-            attention = self.attention_weights[layer, :, token_index, :]
+            if type(layer) == Aggregation:
+                attention = layer.agg(self.attention_weights[:, :, token_index, :], dim=0)
+            else:
+                attention = self.attention_weights[layer, :, token_index, :]
+
             title = f'Layer {layer}'
             y_label = 'Head'
+
         else:
-            attention = self.attention_weights[layer, head, token_index, :].unsqueeze(0)
+            if type(head) == Aggregation:
+                attention = head.agg(self.attention_weights[layer, :, token_index, :], dim=1).unsqueeze(0)
+            elif type(layer) == Aggregation:
+                attention = layer.agg(self.attention_weights[:, head, token_index, :], dim=0).unsqueeze(0)
+            else:
+                attention = self.attention_weights[layer, head, token_index, :].unsqueeze(0)
+            
             title = f'Layer {layer} Head {head}'
             y_label = ''
-        
+        print(attention)
         attention = attention.numpy()
         
         curdoc().theme = 'carbon'
@@ -150,7 +186,7 @@ class AttentionVisualizer:
         elif agg == Aggregation.max:
             attention = self.get_max_attention(token_index=token_index, layer=layer, head=head)
         else:
-            raise ValueError(f'Unknown aggreagtation {agg}')
+            raise ValueError(f'Unknown aggregation {agg}')
         return list(zip(self.tokens, attention.tolist()))
 
     @property
