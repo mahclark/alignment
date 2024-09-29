@@ -149,7 +149,7 @@ class AttentionVisualizer:
             
             title = f'Layer {layer} Head {head}'
             y_label = ''
-        print(attention)
+        
         attention = attention.numpy()
         
         curdoc().theme = 'carbon'
