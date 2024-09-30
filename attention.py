@@ -107,10 +107,29 @@ class AttentionVisualizer:
         
         return self.attention_weights[layer, head, token_index, :]
     
-    def print_attention(self, *, token_index: int, layer: Optional[int] = None, head: Optional[int] = None) -> None:
-        attention = self.get_mean_attention(token_index=token_index, layer=layer, head=head)
+    def print_attention(
+            self,
+            *,
+            token_index: int,
+            layer: Optional[int] = None,
+            head: Optional[int] = None,
+            agg: Optional[Aggregation] = None,
+            token_fmt: Callable[[str], str] = lambda x: x,
+        ) -> None:
+        if layer is not None and head is not None:
+            attention = self.attention_weights[layer, head, token_index, :]
+        elif agg is None:
+            raise ValueError('agg must be specified when a specific layer and head is not specifiied')
+        else:
+            if agg == Aggregation.mean:
+                attention = self.get_mean_attention(token_index=token_index, layer=layer, head=head)
+            elif agg == Aggregation.max:
+                attention = self.get_max_attention(token_index=token_index, layer=layer, head=head)
+            else:
+                ValueError(f'Unsupported aggregation {agg}')
+
         print(tabulate([
-            self.tokens,
+            list(map(token_fmt, self.tokens)),
             [f'{n:.2f}' for n in attention.tolist()],
         ]))
     
